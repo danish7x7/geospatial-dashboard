@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with PostGIS extension
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: geospatial-db
+    environment:
+      POSTGRES_USER: geospatial_user
+      POSTGRES_PASSWORD: geospatial_pass
+      POSTGRES_DB: geospatial_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - geospatial_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geospatial_user -d geospatial_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for tile caching
+  redis:
+    image: redis:7-alpine
+    container_name: geospatial-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - geospatial_net
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  # pgAdmin for database inspection (optional, helpful for debugging)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: geospatial-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    networks:
+      - geospatial_net
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  geospatial_net:
+    driver: bridge
