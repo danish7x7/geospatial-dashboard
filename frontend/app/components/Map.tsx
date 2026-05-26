@@ -155,7 +155,7 @@ export default function Map({ width = 800, height = 600 }: MapProps) {
   return (
     <DeckGL
       initialViewState={viewState}
-      onViewStateChange={({ viewState: newViewState }) => {
+      onViewStateChange={({ viewState: newViewState }: { viewState: any }) => {
         setViewState({
           latitude: newViewState.latitude,
           longitude: newViewState.longitude,
