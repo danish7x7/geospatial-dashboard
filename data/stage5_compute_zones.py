@@ -14,38 +14,67 @@ DESTINATION_CARE = ('hospital', 'clinic', 'dialysis', 'mental_health')
 
 # ---------------------------------------------------------------------------
 # FOOD DESERT ZONES — severity from USDA Atlas flags; continuous composite score
+# Grocery distance + count populated from food_access_points (mirrors healthcare
+# pattern: centroid-to-nearest distance, count of points within tract).
 # ---------------------------------------------------------------------------
 food_sql = """
 TRUNCATE food_desert_zones RESTART IDENTITY;
 INSERT INTO food_desert_zones
     (census_tract_id, geom, food_access_score, nearest_grocery_distance_m,
      num_food_access_points, population_affected, severity)
+WITH grocery AS (
+    -- Filter explicitly to grocery_store: defensive against future loads of
+    -- farmers_market / food_pantry / community_garden into the same table.
+    SELECT geom::geography AS g
+    FROM food_access_points
+    WHERE type = 'grocery_store'
+),
+tract_metrics AS (
+    SELECT
+        t.census_tract_id,
+        t.geom,
+        t.population,
+        t.is_low_access,
+        t.is_low_income,
+        t.is_food_desert,
+        t.pct_without_vehicle,
+        t.pct_snap,
+        -- nearest grocery distance from tract centroid (m); NULL if no points
+        (SELECT MIN(ST_Distance(ST_Centroid(t.geom)::geography, g.g))
+         FROM grocery g) AS grocery_m,
+        -- grocery points physically within this tract
+        (SELECT COUNT(*) FROM food_access_points f
+         WHERE f.type = 'grocery_store'
+           AND ST_Within(f.geom, t.geom)) AS n_within
+    FROM census_tracts t
+    WHERE t.geom IS NOT NULL
+)
 SELECT
-    t.census_tract_id,
-    t.geom,
+    census_tract_id,
+    geom,
     -- Continuous composite (100 = best access). Weighted penalties, clamped 0-100.
+    -- Score formula unchanged: USDA Atlas flags + vehicle/SNAP penalties.
     GREATEST(0, LEAST(100,
         100
-        - (CASE WHEN t.is_low_access THEN 40 ELSE 0 END)
-        - (CASE WHEN t.is_low_income THEN 30 ELSE 0 END)
-        - (COALESCE(t.pct_without_vehicle, 0) / 100.0 * 20)
-        - (COALESCE(t.pct_snap, 0) / 100.0 * 10)
+        - (CASE WHEN is_low_access THEN 40 ELSE 0 END)
+        - (CASE WHEN is_low_income THEN 30 ELSE 0 END)
+        - (COALESCE(pct_without_vehicle, 0) / 100.0 * 20)
+        - (COALESCE(pct_snap, 0) / 100.0 * 10)
     ))::float AS food_access_score,
-    NULL::float AS nearest_grocery_distance_m,   -- requires grocery points (future)
-    NULL::int   AS num_food_access_points,        -- requires grocery points (future)
+    grocery_m AS nearest_grocery_distance_m,
+    n_within  AS num_food_access_points,
     CASE
-        WHEN t.is_food_desert THEN t.population
-        WHEN t.is_low_access  THEN t.population
+        WHEN is_food_desert THEN population
+        WHEN is_low_access  THEN population
         ELSE 0
     END AS population_affected,
     CASE
-        WHEN t.is_food_desert THEN 'critical'     -- low-income AND low-access
-        WHEN t.is_low_access  THEN 'high'          -- low-access only
-        WHEN t.is_low_income  THEN 'medium'        -- low-income only
+        WHEN is_food_desert THEN 'critical'      -- low-income AND low-access
+        WHEN is_low_access  THEN 'high'           -- low-access only
+        WHEN is_low_income  THEN 'medium'         -- low-income only
         ELSE 'low'
     END AS severity
-FROM census_tracts t
-WHERE t.geom IS NOT NULL;
+FROM tract_metrics;
 """
 
 # ---------------------------------------------------------------------------
@@ -121,6 +150,26 @@ with engine.connect() as conn:
         "SELECT census_tract_id, ROUND(food_access_score::numeric,1), severity "
         "FROM food_desert_zones ORDER BY food_access_score ASC LIMIT 3")).fetchall():
         print(f"  {r[0]}  score={r[1]}  ({r[2]})")
+    # New columns populated from food_access_points (Task 1, step 5)
+    print("Grocery distance/count coverage:")
+    cov = conn.execute(text(
+        "SELECT "
+        "  COUNT(*) FILTER (WHERE nearest_grocery_distance_m IS NOT NULL), "
+        "  COUNT(*) FILTER (WHERE nearest_grocery_distance_m IS NULL), "
+        "  ROUND(AVG(nearest_grocery_distance_m)::numeric, 0), "
+        "  ROUND(MAX(nearest_grocery_distance_m)::numeric, 0), "
+        "  SUM(num_food_access_points), "
+        "  COUNT(*) FILTER (WHERE num_food_access_points = 0) "
+        "FROM food_desert_zones")).fetchone()
+    print(f"  tracts with grocery distance: {cov[0]} (NULL: {cov[1]})")
+    print(f"  avg distance to nearest grocery: {cov[2]} m   max: {cov[3]} m")
+    print(f"  total grocery points within tracts: {cov[4]}   tracts with 0 groceries: {cov[5]}")
+    print("Farthest-from-grocery tracts (m):")
+    for r in conn.execute(text(
+        "SELECT census_tract_id, ROUND(nearest_grocery_distance_m::numeric,0), severity "
+        "FROM food_desert_zones WHERE nearest_grocery_distance_m IS NOT NULL "
+        "ORDER BY nearest_grocery_distance_m DESC LIMIT 3")).fetchall():
+        print(f"  {r[0]}  {r[1]} m  ({r[2]})")
 
     print("\n=== HEALTHCARE DESERT ZONES ===")
     hz_total = conn.execute(text("SELECT COUNT(*) FROM healthcare_desert_zones")).scalar()

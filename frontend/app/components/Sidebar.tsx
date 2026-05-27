@@ -17,14 +17,14 @@ const HEALTHCARE_TYPES = [
   { value: 'dialysis', label: '🩸 Dialysis', color: '#ff6600' },
   { value: 'mental_health', label: '🧠 Mental Health', color: '#cc66ff' },
   { value: 'long_term_care', label: '🛏️ Long-Term Care', color: '#ffcc00' },
-  { value: 'hospice_home_health', label: '🏠 Hospice / Home Health', color: '#66cc99' },
+  { value: 'hospice_home_health', label: '🏠 Hospice / Home Health', color: '#14b8a6' },
 ];
 
 const FOOD_TYPES = [
-  { value: 'grocery_store', label: '🛒 Grocery Store', color: '#228b22' },
-  { value: 'farmers_market', label: '🌾 Farmers Market', color: '#3cb371' },
-  { value: 'food_pantry', label: '📦 Food Pantry', color: '#9acd32' },
-  { value: 'community_garden', label: '🌱 Community Garden', color: '#adff2f' },
+  { value: 'grocery_store', label: '🛒 Grocery Store', color: '#ec4899' },
+  { value: 'farmers_market', label: '🌾 Farmers Market', color: '#a855f7' },
+  { value: 'food_pantry', label: '📦 Food Pantry', color: '#f0abfc' },
+  { value: 'community_garden', label: '🌱 Community Garden', color: '#7c3aed' },
 ];
 
 export default function Sidebar() {

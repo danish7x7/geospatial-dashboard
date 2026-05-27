@@ -24,15 +24,18 @@ const HEALTHCARE_TYPE_COLORS: Record<string, [number, number, number]> = {
   dialysis: [255, 102, 0],
   mental_health: [204, 102, 255],
   long_term_care: [255, 204, 0],
-  hospice_home_health: [0, 0, 0],
+  hospice_home_health: [20, 184, 166],  // teal — was [0,0,0] which is invisible on dark basemap
   other: [150, 150, 150],
 };
 
+// Food layer uses the purple-magenta-pink band to avoid collision with severity
+// (reds/oranges/yellows) and healthcare (blues). Four distinct hues inside one
+// family so a viewer with the legend can disambiguate at zoom-out.
 const FOOD_TYPE_COLORS: Record<string, [number, number, number]> = {
-  grocery_store: [34, 139, 34],
-  farmers_market: [60, 179, 113],
-  food_pantry: [154, 205, 50],
-  community_garden: [173, 255, 47],
+  grocery_store: [236, 72, 153],   // hot pink — flagship (most common type)
+  farmers_market: [168, 85, 247],  // violet
+  food_pantry: [240, 171, 252],    // light pink/fuchsia
+  community_garden: [124, 58, 237], // deep purple
 };
 
 interface MapProps {
