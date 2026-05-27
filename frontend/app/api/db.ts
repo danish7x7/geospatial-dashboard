@@ -10,7 +10,7 @@ export function getPool() {
       port: parseInt(process.env.DB_PORT || '5432'),
       database: process.env.DB_NAME || 'geospatial_db',
       user: process.env.DB_USER || 'geospatial_user',
-      password: process.env.DB_PASSWORD || 'geospatial_pass',
+      password: process.env.DB_PASSWORD,
     });
   }
   return pool;
