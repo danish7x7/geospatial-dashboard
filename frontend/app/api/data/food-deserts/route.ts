@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       params.push(minLng, minLat, maxLng, maxLat);
     }
 
-    sql += ` LIMIT 1000`;
+    sql += ` LIMIT 2000`;
 
     const rows = await query(sql, params);
 

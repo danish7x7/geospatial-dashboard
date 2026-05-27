@@ -1,303 +1,133 @@
-# 🗺️ Spatial Inequality Dashboard
+# Geospatial Inequality Dashboard
 
-A full-stack geospatial intelligence platform visualizing food deserts and healthcare access disparities across the United States. Built with modern web technologies to expose real-world inequalities in food and healthcare access.
+A full-stack geospatial dashboard visualizing **food-access and healthcare-access disparities across the 9-county San Francisco Bay Area**. It renders ~1,588 census tracts colored by food-desert severity, overlaid with ~1,930 real licensed healthcare facilities, using viewport-based loading so only visible features are fetched and drawn.
 
-## 🎯 Mission
+> Built as a geospatial-engineering portfolio project. Data is real: U.S. Census tract geometry, USDA food-access metrics, and California state facility licensing data, integrated in PostGIS and served as GeoJSON.
 
-This project demonstrates how geospatial data and visualization can be used to understand and address social inequality. It visualizes:
+![Bay Area food-desert severity with healthcare facilities](docs/screenshot.png)
 
-- **Food Deserts**: Areas with limited access to affordable, healthy food
-- **Healthcare Access**: Distribution of medical facilities and equity in healthcare access
-- **Social Impact**: How poverty and mobility correlate with resource availability
+## What it shows
 
-## 🏗️ Architecture
+- **Food desert severity** — each Bay Area census tract classified using the USDA Food Access Research Atlas definitions (low-income and/or low-access), rendered as choropleth polygons.
+- **Healthcare facilities** — real licensed facilities (hospitals, clinics, dialysis, mental health, long-term care, hospice/home health), filterable by type, with bed counts and Medi-Cal acceptance.
+- **Derived access zones** — per-tract healthcare-access scoring based on PostGIS distance from tract centroid to the nearest hospital/clinic.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                   React + Deck.gl Frontend              │
-│            (Geospatial Visualization Layer)             │
-└────────────────────┬────────────────────────────────────┘
-                     │ API Calls
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│          Next.js 14 API Routes + TypeScript             │
-│         (PostGIS Queries, Data Aggregation)             │
-└────────────────────┬────────────────────────────────────┘
-                     │ SQL Queries
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│      PostgreSQL + PostGIS (Spatial Database)            │
-│   (Geometric Indexing, Distance Calculations, etc.)     │
-└─────────────────────────────────────────────────────────┘
-```
+## Tech stack
 
-### Tech Stack
+**Frontend**
+- Next.js 16 (App Router) + React 19 + TypeScript
+- Deck.gl 9 (`GeoJsonLayer` for tract polygons, `ScatterplotLayer` for facilities)
+- react-map-gl + Mapbox GL (dark basemap)
+- Zustand (state), Tailwind CSS, Framer Motion
 
-**Frontend:**
-- Next.js 14 (App Router, TypeScript)
-- Deck.gl 9.0 (GPU-accelerated geospatial visualization)
-- Mapbox GL (basemap rendering)
-- Zustand (state management)
-- Tailwind CSS + Framer Motion (styling & animations)
-- Axios (HTTP client)
+**Backend**
+- Next.js API routes (TypeScript, serverless — not Express)
+- `pg` driver against PostGIS; geometry serialized via `ST_AsGeoJSON`
 
-**Backend:**
-- Node.js + Express (via Next.js API routes)
-- TypeScript (type safety)
-- pg (PostgreSQL driver)
+**Database**
+- PostgreSQL 16 + PostGIS 3.4 (Docker Compose)
+- Redis and pgAdmin included in the compose stack
+- GiST spatial indexes on all geometry columns
 
-**Database:**
-- PostgreSQL 16 + PostGIS 3.4 (spatial database)
-- Redis (tile caching, future optimization)
-- Docker Compose (local development)
+**Data pipeline**
+- Python: GeoPandas (shapefile + spatial ops), pandas, SQLAlchemy + GeoAlchemy2 (`to_postgis`), psycopg2
 
-**Data Processing:**
-- Python 3.10+ (data pipeline)
-- GDAL/Rasterio (geospatial data handling)
-- GeoPandas (spatial data frames)
-- Tippecanoe (vector tile generation)
+## Data sources
 
-## 🚀 Getting Started
+| Layer | Source | Notes |
+|-------|--------|-------|
+| Census tract geometry | U.S. Census **TIGER/Line 2010**, California (FIPS 06) | 2010 vintage chosen deliberately to match the Atlas (see below) |
+| Food-access metrics | **USDA Food Access Research Atlas 2019** | Tract-level low-income / low-access flags, population, poverty, vehicle access |
+| Healthcare facilities | **California HCAI / CDPH** licensed & certified facility data | State licensing authority; replaced a discontinued federal source |
 
-### Prerequisites
+### Why 2010 tract geometry
 
-- Docker & Docker Compose
-- Node.js 18+ & npm
-- Python 3.10+ (for data processing)
-- Git
+The USDA Atlas 2019 data is keyed to **2010-vintage** census tracts. Tract boundaries and GEOIDs are redrawn each decennial census, so pairing the 2019 Atlas with 2010 TIGER geometry yields an **exact GEOID join** with zero attribute loss. Using 2020 boundaries would require a crosswalk and introduce approximation — noted as future work.
 
-### Quick Start (Docker)
+### Why a California state source for healthcare
+
+The original plan used a federal infrastructure dataset (HIFLD Open), but that public portal was **discontinued in September 2025**. The California HCAI/CDPH licensed-facility dataset is a stronger fit for a California-scoped project anyway: it is the actual licensing authority, is unambiguously public, and includes facility type, bed capacity, and Medi-Cal participation.
+
+## Data pipeline
+
+The pipeline runs in verifiable stages (`data/`), each checking its output before the next builds on it:
+
+1. **Read tracts** — load TIGER shapefile, filter to the 9 Bay Area counties (~1,588 tracts), inspect CRS.
+2. **Read Atlas** — load Atlas CSV, repair GEOID leading zeros, verify the GEOID set joins cleanly to TIGER.
+3. **Load `census_tracts`** — reproject 4269→4326, join Atlas attributes, compute `pct_without_vehicle`, cast to MultiPolygon, write to PostGIS.
+4. **Load `healthcare_facilities`** — filter to Bay Area, map California facility types to the schema enum, spatially join points to tracts (filtering out mislabeled out-of-area records), write points.
+5. **Derive zones** — compute `food_desert_zones` (severity from Atlas flags + a continuous access-score composite) and `healthcare_desert_zones` (centroid-to-facility distances, severity bands) entirely in PostGIS.
+
+### Running the pipeline
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/yourusername/geospatial-dashboard.git
-cd geospatial-dashboard
+# 1. Start the database stack
+docker compose up -d
 
-# 2. Start PostgreSQL + PostGIS + Redis
-docker-compose up -d
+# 2. Activate the Python environment (geopandas, pandas, sqlalchemy, geoalchemy2, psycopg2, python-dotenv)
+conda activate geo   # or your venv
 
-# 3. Wait for database to be ready
-sleep 10
+# 3. Configure DB connection in data/.env  (gitignored)
+#    PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 
-# 4. Load sample data
-python data/load_data.py
-
-# 5. Install frontend dependencies
-cd frontend
-npm install
-
-# 6. Set up environment
-echo 'NEXT_PUBLIC_MAPBOX_TOKEN=pk.your_mapbox_token' > .env.local
-
-# 7. Start dev server
-npm run dev
+# 4. Run the stages in order
+python data/stage3_load_tracts.py
+python data/stage4_load_healthcare.py
+python data/stage5_compute_zones.py
 ```
 
-Visit `http://localhost:3000` in your browser.
+Source data files (Census/USDA/HCAI downloads) are large and **not committed** — download them locally and point the stage scripts at their paths.
 
-### Environment Variables
+## Key engineering decisions
 
-**Frontend (.env.local):**
-```
-NEXT_PUBLIC_MAPBOX_TOKEN=pk.your_mapbox_token
-```
+- **Schema shaped to real data, not the reverse.** California licenses no "urgent care" or "dental" facility *type*, but does license dialysis, long-term care, and hospice/home-health. The healthcare category set was reshaped to match the actual licensing taxonomy rather than forcing data into placeholder categories.
+- **GEOID leading-zero repair.** The Atlas CSV stores tract IDs numerically, dropping leading zeros (California `06…` arrives as `6…`). Left unhandled, every join silently fails. The pipeline reads IDs as strings and zero-pads to 11 characters; a join-integrity check verifies the fix.
+- **MultiPolygon geometry.** Real census tracts include multipart polygons (islands, water-split tracts). Geometry columns use `GEOMETRY(MultiPolygon, 4326)` and all geometries are promoted to MultiPolygon on load.
+- **Spatial filtering over trusting county codes.** A handful of facilities carry Bay Area county codes but geocode hundreds of miles away. Facilities are filtered by an actual point-in-tract spatial join, which also stamps each facility with its containing tract.
+- **Spatial computation in PostGIS.** Distances (`ST_Distance` on `geography`), centroids, and point-in-polygon tests run in the database against GiST indexes, not in application code.
 
-**Backend (implicit from docker-compose.yml):**
-```
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=geospatial_db
-DB_USER=geospatial_user
-DB_PASSWORD=geospatial_pass
-```
+## Database schema
 
-## 📊 Data Schema
+Five core tables (`scripts/init.sql`):
 
-### Tables
+- `census_tracts` — tract polygons + demographics + USDA food-access flags
+- `food_access_points` — grocery/market points *(schema present; data is future work)*
+- `healthcare_facilities` — facility points, typed, with beds and Medi-Cal flag
+- `food_desert_zones` — derived per-tract food-access severity and score
+- `healthcare_desert_zones` — derived per-tract healthcare-access severity and distances
 
-#### `food_access_points`
-Locations with food access (grocery stores, farmers markets, food pantries, community gardens).
+All geometry columns carry GiST indexes.
 
-```sql
-- id: SERIAL PRIMARY KEY
-- name: VARCHAR(255)
-- type: VARCHAR(50) -- 'grocery_store', 'farmers_market', 'food_pantry', 'community_garden'
-- geom: GEOMETRY(Point, 4326)
-- address: VARCHAR(255)
-```
+## API
 
-#### `healthcare_facilities`
-Medical facilities (hospitals, clinics, urgent care, dental, mental health).
+Next.js API routes returning GeoJSON `FeatureCollection`s, all supporting a `bounds` bbox parameter for viewport queries:
 
-```sql
-- id: SERIAL PRIMARY KEY
-- name: VARCHAR(255)
-- type: VARCHAR(50)
-- geom: GEOMETRY(Point, 4326)
-- beds: INTEGER
-- accepts_medicaid: BOOLEAN
-```
-
-#### `food_desert_zones`
-Derived zones indicating food access disparities.
-
-```sql
-- id: SERIAL PRIMARY KEY
-- geom: GEOMETRY(Polygon, 4326)
-- food_access_score: FLOAT (0-100)
-- nearest_grocery_distance_m: FLOAT
-- severity: VARCHAR(20) -- 'low', 'medium', 'high', 'critical'
-```
-
-### Spatial Indexes
-
-All geometry columns have GiST indexes for fast spatial queries:
-```sql
-CREATE INDEX idx_geom ON table_name USING GIST(geom);
-```
-
-## 🔍 Key Features
-
-### 1. **Tile-Based Rendering**
-- Deck.gl layers only render visible features
-- Viewport-based data fetching reduces bandwidth
-- Efficient spatial indexing with PostGIS
-
-### 2. **Real-Time Filtering**
-- Toggle layers on/off
-- Filter by severity, type, medicaid acceptance
-- Responsive to map bounds
-
-### 3. **Spatial Analysis**
-- Distance calculations (PostGIS ST_Distance)
-- Intersection queries (ST_Intersects, ST_DWithin)
-- Polygon aggregation for census tracts
-
-### 4. **Interactive Map**
-- Pan, zoom, rotate with Mapbox GL
-- Click/hover for feature details
-- Color-coded by severity & type
-- Custom legends
-
-## 📈 API Endpoints
-
-### Food Deserts
 ```
 GET /api/data/food-deserts?severity=critical&bounds=minLng,minLat,maxLng,maxLat
-```
-
-### Healthcare Facilities
-```
 GET /api/data/healthcare?type=hospital&accepts_medicaid=true&bounds=...
+GET /api/data/food-access?bounds=...        # returns an empty collection until grocery data is loaded
 ```
 
-### Food Access Points
-```
-GET /api/data/food-access?type=grocery_store&bounds=...
-```
+## Frontend setup
 
-All endpoints return GeoJSON FeatureCollections.
-
-## 🗄️ Database Operations
-
-### Query Examples
-
-**Find food deserts within 5km:**
-```sql
-SELECT * FROM food_desert_zones
-WHERE ST_DWithin(geom::geography, ST_Point(-122.4194, 37.7749)::geography, 5000)
-AND severity = 'critical';
-```
-
-**Count hospitals by county:**
-```sql
-SELECT county, COUNT(*) as hospital_count
-FROM healthcare_facilities
-WHERE type = 'hospital'
-GROUP BY county;
-```
-
-**Distance to nearest grocery store:**
-```sql
-SELECT name, ST_Distance(geom::geography, grocery.geom::geography) as distance_m
-FROM food_desert_zones
-CROSS JOIN LATERAL (
-  SELECT geom FROM food_access_points
-  WHERE type = 'grocery_store'
-  ORDER BY geom <-> food_desert_zones.geom
-  LIMIT 1
-) grocery;
-```
-
-## 🎨 Visualization Design
-
-### Color Scheme
-- **Food Deserts**: Red (critical) → Orange → Yellow → Green (healthy)
-- **Healthcare**: Blue (hospital) → Cyan (clinic) → Orange (urgent care)
-- **Food Access**: Green shades for different food types
-
-### Layer Types
-- **Polygons**: Food/healthcare desert zones (GeoJsonLayer)
-- **Points**: Individual facilities (ScatterplotLayer)
-- **Heatmaps**: Density visualization (HeatmapLayer)
-
-## 📦 Deployment
-
-### Docker Build
-```bash
-docker build -t geospatial-dashboard:latest .
-docker run -p 3000:3000 geospatial-dashboard:latest
-```
-
-### Vercel (Frontend Only)
 ```bash
 cd frontend
-vercel deploy
+npm install
+echo 'NEXT_PUBLIC_MAPBOX_TOKEN=pk.your_token' > .env.local
+# also set DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD in .env.local
+npm run dev          # http://localhost:3000
 ```
 
-### Full Stack (Railway, Render, etc.)
-See `docker-compose.yml` for containerization setup.
+Before committing: `npm run lint && npm run type-check`.
 
-## 🧪 Testing
+## Limitations & future work
 
-### Data Processing
-```bash
-python -m pytest data/tests/
-```
+- **Centroid-distance approximation.** Healthcare access distance is measured straight-line from each tract's centroid to the nearest facility — not road-network distance, and not from where residents actually live within a tract. Road-network routing is a future enhancement.
+- **Food-access points not yet loaded.** `food_access_points` (grocery stores, markets) is schema-complete but unpopulated; the food layer currently derives from USDA tract flags. Loading SNAP-retailer or OSM grocery data would enable true nearest-grocery distances.
+- **Healthcare severity uses hospital proximity only.** Clinic proximity is recorded but not blended into the severity band; a composite hospital+clinic score is a candidate refinement.
+- **2010 tract vintage.** Geometry matches the 2019 Atlas exactly but shows 2010 boundaries. A 2020-vintage upgrade would need a tract crosswalk.
+- **Scope.** Currently the 9-county Bay Area. The same sources and pipeline extend to all of California (~8,000 tracts) by widening the county filter; full-US scale would need vector tiles.
 
-### API Tests
-```bash
-cd frontend
-npm run test
-```
+## License
 
-## 📚 Learning Resources
-
-- [Deck.gl Documentation](https://deck.gl/)
-- [PostGIS Manual](https://postgis.net/docs/)
-- [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/)
-- [Web Mercator Projection](https://en.wikipedia.org/wiki/Web_Mercator_projection)
-- [Geospatial Analysis in Python](https://www.oreilly.com/library/view/geopandas-for-geospatial-analysis/9781098048235/)
-
-## 🤝 Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/awesome-feature`)
-3. Commit changes (`git commit -m 'Add awesome feature'`)
-4. Push to branch (`git push origin feature/awesome-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-MIT License - see LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- Inspired by projects highlighting social inequality
-- Built with modern open-source geospatial tools
-- Data sourced from public health and government databases
-
----
-
-**Built with ❤️ to make spatial inequality visible.**
+MIT — see `LICENSE`.

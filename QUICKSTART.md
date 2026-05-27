@@ -1,203 +1,116 @@
-# ⚡ Quick Start Guide
+# Quick Start Guide
 
-Get the geospatial dashboard running in under 10 minutes.
+Get the geospatial dashboard running locally.
 
-## Option 1: Docker (Recommended for Beginners)
+## Prerequisites
+
+- Docker & Docker Compose
+- Node.js 18+ & npm
+- Python 3.10+ with the data-pipeline dependencies (`pip install -r data/requirements.txt`)
+- A free Mapbox token (https://account.mapbox.com)
+- Source data files downloaded locally (see "Data" below) — they are large and not committed
+
+## 1. Start the database stack
 
 ```bash
-# 1. Clone and navigate
-git clone https://github.com/yourusername/geospatial-dashboard.git
-cd geospatial-dashboard
+docker compose up -d        # PostgreSQL + PostGIS, Redis, pgAdmin
+sleep 10                     # wait for PostGIS health check
+```
 
-# 2. Start services (PostgreSQL, Redis, pgAdmin)
-docker-compose up -d
+## 2. Configure the pipeline connection
 
-# 3. Wait for PostgreSQL to be ready
-echo "Waiting for PostgreSQL..."
-sleep 10
+Create `data/.env` (gitignored) with your database credentials:
 
-# 4. Load sample data
-python data/load_data.py
+```
+PGHOST=localhost
+PGPORT=5432
+PGDATABASE=geospatial_db
+PGUSER=geospatial_user
+PGPASSWORD=your_password
+```
 
-# 5. Install frontend dependencies
+## 3. Download the source data
+
+The pipeline reads real public datasets that are too large to commit. Download them and point the stage scripts at their local paths:
+
+- **Census tract geometry** — TIGER/Line 2010, California (`tl_2010_06_tract10`)
+- **Food-access metrics** — USDA Food Access Research Atlas 2019
+- **Healthcare facilities** — California HCAI / CDPH licensed & certified facility locations
+
+## 4. Run the pipeline (staged)
+
+Each stage verifies its output before the next builds on it.
+
+```bash
+# Inspection / verification (optional — load nothing, just confirm the data)
+python data/stage1_read_tracts.py     # tract count + CRS check
+python data/stage2_read_atlas.py      # GEOID join-integrity check
+
+# Loaders
+python data/stage3_load_tracts.py     # census_tracts (polygons + Atlas attrs)
+python data/stage4_load_healthcare.py # healthcare_facilities (points, tract-tagged)
+python data/stage5_compute_zones.py   # food_desert_zones + healthcare_desert_zones
+```
+
+## 5. Start the frontend
+
+```bash
 cd frontend
 npm install
-
-# 6. Add Mapbox token (get free token at https://account.mapbox.com)
+# .env.local: Mapbox token + DB connection
 echo 'NEXT_PUBLIC_MAPBOX_TOKEN=pk.your_token_here' > .env.local
-
-# 7. Start development server
+cat >> .env.local <<'EOF'
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=geospatial_db
+DB_USER=geospatial_user
+DB_PASSWORD=your_password
+EOF
 npm run dev
 ```
 
-Visit **http://localhost:3000** and start exploring!
+Visit **http://localhost:3000**.
 
----
+## Verifying setup
 
-## Option 2: Native Installation (For Development)
-
-### Prerequisites
-- Node.js 18+
-- Python 3.10+
-- PostgreSQL 16 + PostGIS 3.4
-- Redis (optional, for caching)
-
-### Setup
-
+**Database connection:**
 ```bash
-# 1. Install Node dependencies
-cd frontend
-npm install
-
-# 2. Install Python dependencies
-pip install psycopg2-binary geospatial
-
-# 3. Create `.env.local` with Mapbox token
-echo 'NEXT_PUBLIC_MAPBOX_TOKEN=pk.your_token_here' > .env.local
-
-# 4. Configure PostgreSQL connection
-# Edit frontend/.env.local with your database credentials:
-# DB_HOST=localhost
-# DB_PORT=5432
-# DB_NAME=geospatial_db
-# DB_USER=your_postgres_user
-# DB_PASSWORD=your_postgres_password
-
-# 5. Load sample data
-python ../data/load_data.py
-
-# 6. Start dev server
-npm run dev
+psql -h localhost -U geospatial_user -d geospatial_db -c "SELECT COUNT(*) FROM census_tracts;"
+# expect ~1588
 ```
 
----
-
-## Verifying Setup
-
-### Check Database Connection
+**API endpoints** (with the dev server running):
 ```bash
-psql -h localhost -U geospatial_user -d geospatial_db -c "SELECT COUNT(*) FROM food_access_points;"
+curl "http://localhost:3000/api/data/food-deserts?bounds=-122.6,37.2,-121.7,38.0"
+curl "http://localhost:3000/api/data/healthcare?bounds=-122.6,37.2,-121.7,38.0"
 ```
-
-Expected output: `count` showing number of records (50+ for demo data)
-
-### Check Frontend Build
-```bash
-cd frontend
-npm run build
-npm run type-check
-```
-
-Should complete without errors.
-
-### Test API Endpoints
-```bash
-# Food deserts
-curl 'http://localhost:3000/api/data/food-deserts'
-
-# Healthcare facilities
-curl 'http://localhost:3000/api/data/healthcare'
-
-# Food access points
-curl 'http://localhost:3000/api/data/food-access'
-```
-
-Should return valid GeoJSON.
-
----
+Both should return GeoJSON FeatureCollections. The `food-access` endpoint returns an empty collection until grocery-point data is loaded (see README "Future work").
 
 ## Troubleshooting
 
-### PostgreSQL Connection Refused
-```bash
-# Check if PostgreSQL is running
-docker-compose ps
+**PostgreSQL connection refused** — check the container: `docker compose ps`; restart with `docker compose restart postgres`.
 
-# Restart if needed
-docker-compose restart postgres
-```
+**Mapbox token error** — ensure `NEXT_PUBLIC_MAPBOX_TOKEN` is set in `frontend/.env.local`.
 
-### Mapbox Token Error
-- Get a free Mapbox token: https://account.mapbox.com/auth/signup
-- Add to `.env.local`: `NEXT_PUBLIC_MAPBOX_TOKEN=pk.your_token`
+**Port 3000 in use** — `PORT=3001 npm run dev`.
 
-### Port Already in Use
-```bash
-# Find what's using port 3000
-lsof -i :3000
+**Reloading data** — the loaders truncate their tables before inserting, so re-running any stage is safe and idempotent. To rebuild the whole schema from scratch, `docker compose down -v && docker compose up -d` re-runs `scripts/init.sql`.
 
-# Or use a different port
-PORT=3001 npm run dev
-```
-
-### Data Not Loading
-```bash
-# Reload data
-docker-compose exec postgres psql -U geospatial_user -d geospatial_db
-> DELETE FROM food_access_points;
-> DELETE FROM healthcare_facilities;
-> \q
-
-python data/load_data.py
-```
-
----
-
-## Project Structure
+## Project structure
 
 ```
 geospatial-dashboard/
-├── frontend/                    # Next.js 14 app
-│   ├── app/
-│   │   ├── components/         # React components
-│   │   ├── api/                # Next.js API routes
-│   │   ├── lib/                # Utilities & store
-│   │   └── page.tsx            # Dashboard
-│   └── package.json
+├── frontend/                 # Next.js 16 app (App Router)
+│   └── app/
+│       ├── components/       # Map.tsx, Sidebar.tsx
+│       ├── api/data/         # food-deserts, healthcare, food-access routes
+│       ├── lib/              # store (Zustand), geo helpers
+│       └── page.tsx
 ├── data/
-│   ├── load_data.py            # Data pipeline
-│   └── README.md
-├── scripts/
-│   └── init.sql                # Database schema
-├── docker-compose.yml          # Local development stack
-├── README.md                   # Full documentation
-└── QUICKSTART.md              # This file
+│   ├── stage1_read_tracts.py … stage5_compute_zones.py   # staged pipeline
+│   └── requirements.txt
+├── scripts/init.sql          # schema + spatial indexes
+├── docker-compose.yml
+├── README.md
+└── QUICKSTART.md
 ```
-
----
-
-## Next Steps
-
-1. **Explore the Dashboard**
-   - Pan and zoom the map
-   - Toggle layers on/off
-   - Filter by severity and type
-
-2. **Understand the Data**
-   - Check PostGIS queries in `frontend/app/api/`
-   - Review data schema in `scripts/init.sql`
-   - Examine synthetic data generation in `data/load_data.py`
-
-3. **Customize**
-   - Add your own geospatial data
-   - Modify colors in `components/Map.tsx`
-   - Create new analysis layers
-
-4. **Deploy**
-   - Frontend: `vercel deploy` (from `frontend/` directory)
-   - Full stack: Docker to cloud provider
-
----
-
-## Resources
-
-- **Deck.gl**: https://deck.gl/docs
-- **PostGIS**: https://postgis.net/docs/
-- **Next.js**: https://nextjs.org/docs
-- **Mapbox**: https://docs.mapbox.com/
-
----
-
-**Questions?** Check README.md for detailed documentation or open an issue on GitHub.
-
-Good luck! 🗺️✨

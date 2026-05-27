@@ -21,9 +21,11 @@ const SEVERITY_COLORS: Record<string, [number, number, number]> = {
 const HEALTHCARE_TYPE_COLORS: Record<string, [number, number, number]> = {
   hospital: [0, 51, 204],
   clinic: [102, 178, 255],
-  urgent_care: [255, 102, 0],
-  dental: [102, 204, 153],
+  dialysis: [255, 102, 0],
   mental_health: [204, 102, 255],
+  long_term_care: [255, 204, 0],
+  hospice_home_health: [0, 0, 0],
+  other: [150, 150, 150],
 };
 
 const FOOD_TYPE_COLORS: Record<string, [number, number, number]> = {

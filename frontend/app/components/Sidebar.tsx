@@ -14,8 +14,10 @@ const SEVERITY_OPTIONS = [
 const HEALTHCARE_TYPES = [
   { value: 'hospital', label: '🏥 Hospital', color: '#0033cc' },
   { value: 'clinic', label: '⚕️ Clinic', color: '#66b2ff' },
-  { value: 'urgent_care', label: '🚑 Urgent Care', color: '#ff6600' },
-  { value: 'dental', label: '🦷 Dental', color: '#66cc99' },
+  { value: 'dialysis', label: '🩸 Dialysis', color: '#ff6600' },
+  { value: 'mental_health', label: '🧠 Mental Health', color: '#cc66ff' },
+  { value: 'long_term_care', label: '🛏️ Long-Term Care', color: '#ffcc00' },
+  { value: 'hospice_home_health', label: '🏠 Hospice / Home Health', color: '#66cc99' },
 ];
 
 const FOOD_TYPES = [
@@ -188,14 +190,14 @@ export default function Sidebar() {
         )}
 
         {/* Legend */}
-        <div className="p-4 bg-slate-800 rounded-lg border border-slate-700 space-y-3">
-          <h3 className="font-semibold text-slate-200">Legend</h3>
-          <div className="text-xs space-y-2 text-slate-300">
-            <p>🔴 Critical food access gap (&gt;3km to grocery)</p>
-            <p>🟢 Healthy food access (&lt;1km)</p>
-            <p>🏥 Hospitals & medical centers (blue)</p>
-            <p>🛒 Grocery stores & markets (green)</p>
-          </div>
+        <div className="text-xs space-y-2 text-slate-300">
+          <p className="font-semibold text-slate-200">Food Desert Severity</p>
+          <p>🔴 Critical — low-income & low food access (USDA)</p>
+          <p>🟠 High — low food access · 🟡 Medium — low-income · 🟢 Low</p>
+          <p className="font-semibold text-slate-200 pt-2">Healthcare Facilities</p>
+          <p>🏥 Hospital · ⚕️ Clinic · 🩸 Dialysis</p>
+          <p>🧠 Mental health · 🛏️ Long-term care · 🏠 Hospice/home health</p>
+          <p className="text-slate-400 pt-1">Source: USDA Food Access Atlas 2019, CA HCAI/CDPH facility data</p>
         </div>
       </div>
     </motion.div>

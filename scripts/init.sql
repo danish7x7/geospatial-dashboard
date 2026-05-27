@@ -37,11 +37,15 @@ CREATE TABLE IF NOT EXISTS census_tracts (
     state_fips VARCHAR(2),
     county_fips VARCHAR(3),
     tract_fips VARCHAR(6),
-    geom GEOMETRY(Polygon, 4326) NOT NULL,
+    geom GEOMETRY(MultiPolygon, 4326) NOT NULL,
     population INTEGER,
     median_income INTEGER,
     poverty_rate FLOAT,
     pct_without_vehicle FLOAT,
+    is_low_access BOOLEAN,        -- USDA LATracts1
+    is_low_income BOOLEAN,        -- USDA LowIncomeTracts
+    is_food_desert BOOLEAN,       -- USDA LILATracts_1And10 (low-income AND low-access)
+    pct_snap FLOAT,               -- SNAP households / occupied housing units
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -49,7 +53,7 @@ CREATE TABLE IF NOT EXISTS census_tracts (
 CREATE TABLE IF NOT EXISTS food_desert_zones (
     id SERIAL PRIMARY KEY,
     census_tract_id VARCHAR(20) UNIQUE NOT NULL,
-    geom GEOMETRY(Polygon, 4326) NOT NULL,
+    geom GEOMETRY(MultiPolygon, 4326) NOT NULL,
     food_access_score FLOAT, -- 0-100, lower = worse food access
     nearest_grocery_distance_m FLOAT, -- distance in meters to nearest grocery
     num_food_access_points INTEGER,
@@ -62,7 +66,7 @@ CREATE TABLE IF NOT EXISTS food_desert_zones (
 CREATE TABLE IF NOT EXISTS healthcare_desert_zones (
     id SERIAL PRIMARY KEY,
     census_tract_id VARCHAR(20) UNIQUE NOT NULL,
-    geom GEOMETRY(Polygon, 4326) NOT NULL,
+    geom GEOMETRY(MultiPolygon, 4326) NOT NULL,
     healthcare_access_score FLOAT, -- 0-100, lower = worse healthcare access
     nearest_hospital_distance_m FLOAT,
     nearest_clinic_distance_m FLOAT,
