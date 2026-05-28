@@ -89,3 +89,47 @@ export async function fetchHealthcare(
     return [];
   }
 }
+
+/**
+ * Fetch double-burden zones (tracts that are high+critical food deserts AND
+ * high+critical healthcare deserts). Returns features + regional totals +
+ * viewport totals in a single round-trip.
+ *
+ * Distinct shape from the other helpers: those return just `features` (an
+ * array); this returns an object so callers get the summary stats too.
+ */
+export interface DoubleBurdenTotals {
+  tract_count: number;
+  population_affected: number;
+}
+
+export interface DoubleBurdenResult {
+  features: any[];
+  totals: DoubleBurdenTotals;
+  viewport: DoubleBurdenTotals | null;
+}
+
+export async function fetchDoubleBurden(
+  bounds?: [number, number, number, number]
+): Promise<DoubleBurdenResult> {
+  try {
+    const params = new URLSearchParams();
+    if (bounds) {
+      params.append('bounds', bounds.join(','));
+    }
+
+    const response = await axios.get(`/api/data/double-burden?${params.toString()}`);
+    return {
+      features: response.data.features ?? [],
+      totals: response.data.totals ?? { tract_count: 0, population_affected: 0 },
+      viewport: response.data.viewport ?? null,
+    };
+  } catch (error) {
+    console.error('Error fetching double-burden zones:', error);
+    return {
+      features: [],
+      totals: { tract_count: 0, population_affected: 0 },
+      viewport: null,
+    };
+  }
+}

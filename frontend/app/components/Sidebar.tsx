@@ -27,8 +27,24 @@ const FOOD_TYPES = [
   { value: 'community_garden', label: '🌱 Community Garden', color: '#7c3aed' },
 ];
 
+function fmtInt(n: number | null | undefined): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  return n.toLocaleString();
+}
+
 export default function Sidebar() {
-  const { layers, toggleLayer, filters, setFilter, data } = useMapStore();
+  const { layers, toggleLayer, filters, setFilter, data, doubleBurdenStats, viewState, setViewState } = useMapStore();
+
+  // 3D mode inferred from pitch (matches Map.tsx). Toggle sets a moderate
+  // pitch + slight bearing for a pleasant isometric-ish angle.
+  const is3D = viewState.pitch > 0;
+  const toggle3D = () => {
+    if (is3D) {
+      setViewState({ pitch: 0, bearing: 0 });
+    } else {
+      setViewState({ pitch: 45, bearing: -20 });
+    }
+  };
 
   return (
     <motion.div
@@ -46,6 +62,47 @@ export default function Sidebar() {
           <p className="text-sm text-slate-400 mt-2">
             Food deserts & healthcare access analysis
           </p>
+        </div>
+
+        {/* Double-Burden Headline Stat — always visible. Bay Area-wide totals.
+            This is the "interview talking point" stat: a single sentence
+            summarizing the analytical insight from intersecting both layers. */}
+        <div className="p-4 rounded-lg bg-gradient-to-br from-slate-800 to-slate-900 border border-white/20">
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-2">
+            Double Burden
+          </div>
+          <div className="text-2xl font-bold text-white tabular-nums leading-tight">
+            {fmtInt(doubleBurdenStats.regional.tract_count)}
+            <span className="text-sm font-normal text-slate-400 ml-1">tracts</span>
+          </div>
+          <div className="text-xl font-semibold text-white tabular-nums leading-tight mt-1">
+            {fmtInt(doubleBurdenStats.regional.population_affected)}
+            <span className="text-sm font-normal text-slate-400 ml-1">people</span>
+          </div>
+          <p className="text-xs text-slate-400 mt-2 leading-snug">
+            face <span className="text-white">both</span> a food desert{' '}
+            <span className="text-white">and</span> a healthcare desert (high or
+            critical severity on both).
+          </p>
+          {/* Live in-view counter — shown only when the layer is on, since
+              that's when bbox is sent to the API and viewport totals exist. */}
+          {layers.doubleBurden && doubleBurdenStats.viewport && (
+            <div className="mt-3 pt-3 border-t border-slate-700">
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">
+                In current view
+              </div>
+              <div className="text-sm tabular-nums text-slate-200">
+                <span className="font-semibold">
+                  {fmtInt(doubleBurdenStats.viewport.tract_count)}
+                </span>{' '}
+                tracts ·{' '}
+                <span className="font-semibold">
+                  {fmtInt(doubleBurdenStats.viewport.population_affected)}
+                </span>{' '}
+                people
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Layer Toggles */}
@@ -78,6 +135,47 @@ export default function Sidebar() {
             />
             <span>Healthcare Facilities {data.healthcare.length > 0 && `(${data.healthcare.length})`}</span>
           </label>
+          <label className="flex items-center space-x-3 cursor-pointer p-3 rounded-lg hover:bg-slate-800 transition">
+            <input
+              type="checkbox"
+              checked={layers.doubleBurden}
+              onChange={() => toggleLayer('doubleBurden')}
+              className="w-5 h-5 rounded accent-white"
+            />
+            <span>
+              Double-Burden Zones{' '}
+              {data.doubleBurden.length > 0 && `(${data.doubleBurden.length})`}
+            </span>
+          </label>
+        </div>
+
+        {/* 3D toggle. Extrudes food-desert tracts by (100 - food_access_score):
+            taller tower = worse food access. Only meaningful when the
+            food-deserts layer is on; we still show the button regardless so
+            it's discoverable, but hint the dependency. */}
+        <div>
+          <button
+            onClick={toggle3D}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border transition ${
+              is3D
+                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-100'
+                : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
+            }`}
+          >
+            <span className="flex items-center space-x-2">
+              <span className="text-lg">{is3D ? '🔲' : '⛰️'}</span>
+              <span>{is3D ? '2D View' : '3D View'}</span>
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-400">
+              {is3D ? 'flatten' : 'extrude'}
+            </span>
+          </button>
+          {is3D && (
+            <p className="text-[11px] text-slate-400 mt-2 leading-snug">
+              Tract height = (100 − food access score). Taller towers indicate
+              worse food access.
+            </p>
+          )}
         </div>
 
         {/* Food Desert Filters */}
@@ -192,12 +290,17 @@ export default function Sidebar() {
         {/* Legend */}
         <div className="text-xs space-y-2 text-slate-300">
           <p className="font-semibold text-slate-200">Food Desert Severity</p>
-          <p>🔴 Critical — low-income & low food access (USDA)</p>
-          <p>🟠 High — low food access · 🟡 Medium — low-income · 🟢 Low</p>
+          <p>🔴 Critical - low-income & low food access (USDA)</p>
+          <p>🟠 High - low food access · 🟡 Medium - low-income · 🟢 Low</p>
           <p className="font-semibold text-slate-200 pt-2">Healthcare Facilities</p>
           <p>🏥 Hospital · ⚕️ Clinic · 🩸 Dialysis</p>
           <p>🧠 Mental health · 🛏️ Long-term care · 🏠 Hospice/home health</p>
-          <p className="text-slate-400 pt-1">Source: USDA Food Access Atlas 2019, CA HCAI/CDPH facility data</p>
+          <p className="font-semibold text-slate-200 pt-2">Double Burden</p>
+          <p>
+            <span className="inline-block w-3 h-3 border-2 border-white align-middle mr-1" />
+            White outline: high+critical on both food AND healthcare
+          </p>
+          <p className="text-slate-400 pt-1">Source: USDA Food Access Atlas 2019, CA HCAI/CDPH facility data, USDA SNAP Retailer Locator</p>
         </div>
       </div>
     </motion.div>

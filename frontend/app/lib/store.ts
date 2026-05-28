@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { DoubleBurdenTotals } from './geo';
 
 export interface MapState {
   viewState: {
@@ -12,6 +13,7 @@ export interface MapState {
     foodDeserts: boolean;
     foodAccess: boolean;
     healthcare: boolean;
+    doubleBurden: boolean;
   };
   filters: {
     foodDesertSeverity: string | null;
@@ -23,7 +25,15 @@ export interface MapState {
     foodDeserts: any[];
     foodAccess: any[];
     healthcare: any[];
+    doubleBurden: any[];
     loading: boolean;
+  };
+  // Summary stats for the double-burden panel. Regional is the headline
+  // ("X Bay Area tracts..."); viewport tracks the current viewport for the
+  // live in-view counter. Loaded together by the same API call.
+  doubleBurdenStats: {
+    regional: DoubleBurdenTotals;
+    viewport: DoubleBurdenTotals | null;
   };
 }
 
@@ -33,6 +43,7 @@ interface MapStore extends MapState {
   setFilter: (filterKey: keyof MapState['filters'], value: any) => void;
   setData: (dataKey: keyof MapState['data'], data: any) => void;
   setLoading: (loading: boolean) => void;
+  setDoubleBurdenStats: (stats: MapState['doubleBurdenStats']) => void;
 }
 
 export const useMapStore = create<MapStore>((set) => ({
@@ -47,6 +58,7 @@ export const useMapStore = create<MapStore>((set) => ({
     foodDeserts: true,
     foodAccess: true,
     healthcare: true,
+    doubleBurden: false, // off by default — it's the analytical "extra" layer
   },
   filters: {
     foodDesertSeverity: null,
@@ -58,7 +70,12 @@ export const useMapStore = create<MapStore>((set) => ({
     foodDeserts: [],
     foodAccess: [],
     healthcare: [],
+    doubleBurden: [],
     loading: false,
+  },
+  doubleBurdenStats: {
+    regional: { tract_count: 0, population_affected: 0 },
+    viewport: null,
   },
 
   setViewState: (newState) =>
@@ -96,5 +113,10 @@ export const useMapStore = create<MapStore>((set) => ({
         ...state.data,
         loading,
       },
+    })),
+
+  setDoubleBurdenStats: (stats) =>
+    set(() => ({
+      doubleBurdenStats: stats,
     })),
 }));
